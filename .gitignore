@@ -1,5 +1,5 @@
 # Local secrets and device-specific settings
-firmware/capture_upload/main/app_config.h
+firmware/capture_upload/main/app_config.private.h
 
 # Captured images, labels, datasets, trained models, and local artifacts
 data/

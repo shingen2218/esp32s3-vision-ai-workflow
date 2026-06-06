@@ -31,14 +31,13 @@ This checks:
 
 `capture_upload` captures JPEG images and uploads them to the PC server.
 
-Copy local Wi-Fi/server settings first:
+Edit local Wi-Fi/server settings first:
 
 ```powershell
-copy firmware\capture_upload\main\app_config.example.h firmware\capture_upload\main\app_config.h
 notepad firmware\capture_upload\main\app_config.h
 ```
 
-`app_config.h` is ignored by Git so Wi-Fi passwords and local IP addresses are not committed.
+Do not publish your Wi-Fi password or local IP address after editing `app_config.h`.
 
 ```powershell
 cd firmware\capture_upload

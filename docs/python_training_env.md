@@ -28,13 +28,13 @@ python -m pip install -r trainer\requirements.txt
 python -c "import tensorflow as tf; print(tf.__version__)"
 ```
 
-## Trainer Smoke Test
+## Trainer Check
 
 After exporting a dataset from the Web UI:
 
 ```powershell
-python scripts\smoke_test_trainer.py
-python scripts\smoke_test_model_export.py
+python trainer\train_classifier.py --dataset data\exported\<DATASET_NAME> --output data\models\<RUN_NAME> --epochs 2
+python tools\copy_model_to_firmware.py --model-dir data\models\<RUN_NAME>
 ```
 
 If `where.exe python` shows `Python314` before `Python312`, fix PATH or disable Windows App execution aliases.

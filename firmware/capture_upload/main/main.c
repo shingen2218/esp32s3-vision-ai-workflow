@@ -10,12 +10,7 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 
-#if __has_include("app_config.h")
 #include "app_config.h"
-#else
-#warning "Using app_config.example.h. Copy it to app_config.h and set Wi-Fi/server values before flashing."
-#include "app_config.example.h"
-#endif
 
 #ifndef CAPTURE_TRIGGER_GPIO
 #define CAPTURE_TRIGGER_GPIO 0

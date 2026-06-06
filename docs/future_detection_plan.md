@@ -12,10 +12,10 @@ Planned scope:
 - Input size around 160x160 or 224x224
 - 1 to 5 classes for embedded feasibility
 
-Initial directory:
+Possible future directory:
 
 ```text
-detector/
+future_detector/
 ├─ labelstudio_config/
 ├─ export_yolo.py
 ├─ train_detection.py

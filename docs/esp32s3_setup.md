@@ -14,10 +14,9 @@ This project has been build-checked with ESP-IDF v5.4.4 and Seeed Studio XIAO ES
 
 `capture_upload` is the first real-device firmware to test. It connects Wi-Fi, initializes the camera, captures QVGA JPEG frames, and uploads them to the PC FastAPI server.
 
-Copy the local configuration file:
+Open the local configuration file:
 
 ```powershell
-copy firmware\capture_upload\main\app_config.example.h firmware\capture_upload\main\app_config.h
 notepad firmware\capture_upload\main\app_config.h
 ```
 
@@ -32,7 +31,7 @@ Set these values in `app_config.h`:
 #define CAPTURE_DEBOUNCE_MS 300
 ```
 
-`app_config.h` is ignored by Git. Do not paste Wi-Fi passwords into issues, logs, or documentation.
+Do not paste Wi-Fi passwords into issues, logs, or documentation.
 
 Find a likely PC LAN IP:
 
@@ -90,7 +89,7 @@ If no COM port appears, try a known data-capable USB cable, reconnect while hold
 Generate `model_data.cc` and `model_data.h`, then build:
 
 ```powershell
-python scripts\smoke_test_model_export.py
+python tools\copy_model_to_firmware.py --model-dir data\models\<TRAIN_RUN_DIR>
 cd firmware\inference_classification
 idf.py set-target esp32s3
 idf.py build

@@ -21,7 +21,7 @@ TensorFlow 2.21 can still print this warning during full-int8 export:
 Statistics for quantized inputs were expected, but not specified; continuing anyway.
 ```
 
-In this project the representative dataset is supplied. If the final model input is int8 and `fully_quantize` is reported, the smoke tests can continue. Use `scripts/inspect_tflite_model.py` and `scripts/smoke_test_tflite_inference.py` to confirm the actual input/output tensors.
+In this project the representative dataset is supplied. If the final model input is int8 and `fully_quantize` is reported, use `scripts/inspect_tflite_model.py` to confirm the actual input/output tensors.
 
 The generated int8 model explicitly requests:
 
@@ -35,8 +35,7 @@ converter.inference_output_type = tf.int8
 ## Inspect and Test
 
 ```powershell
-python scripts\inspect_tflite_model.py
-python scripts\smoke_test_tflite_inference.py
+python scripts\inspect_tflite_model.py --model data\models\<TRAIN_RUN_DIR>\model_int8.tflite
 ```
 
 ## Convert to C Array
@@ -44,7 +43,7 @@ python scripts\smoke_test_tflite_inference.py
 ESP32-S3 firmware embeds the model through C source files:
 
 ```powershell
-python scripts\smoke_test_model_export.py
+python tools\copy_model_to_firmware.py --model-dir data\models\<TRAIN_RUN_DIR>
 ```
 
 This writes:

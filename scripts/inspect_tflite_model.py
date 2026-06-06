@@ -22,7 +22,7 @@ def main() -> int:
     model_path = args.model if args.model.is_absolute() else ROOT / args.model
     if not model_path.exists():
         print(f"[NG] Model not found: {model_path}")
-        print("     Run: python scripts\\smoke_test_trainer.py")
+        print("     Train a model first, then pass --model data\\models\\<RUN_NAME>\\model_int8.tflite")
         return 1
 
     import tensorflow as tf
