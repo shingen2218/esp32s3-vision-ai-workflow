@@ -1,0 +1,43 @@
+# Local secrets and device-specific settings
+firmware/capture_upload/main/app_config.h
+
+# Captured images, labels, datasets, trained models, and local artifacts
+data/
+artifacts/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+.venv*/
+venv/
+
+# Logs
+*.log
+server_uvicorn*.log
+
+# ESP-IDF generated files
+**/build/
+**/managed_components/
+**/sdkconfig
+**/sdkconfig.old
+**/dependencies.lock
+firmware/inference_classification/main/model_data.cc
+firmware/inference_classification/main/model_data.h
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Generated archives and binaries
+*.zip
+*.tar
+*.tar.gz
+*.bin
+*.elf
+*.map

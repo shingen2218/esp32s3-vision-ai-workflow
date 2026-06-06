@@ -1,0 +1,420 @@
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --text: #1c2430;
+  --muted: #667085;
+  --line: #d9dee7;
+  --accent: #146c94;
+  --accent-2: #2f7d32;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.topbar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.filters,
+.buttonRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.labelCreator,
+.labelDeleter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.labelPalette {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+}
+
+.label-chip-button {
+  min-height: 30px;
+  border-color: #b8d6bf;
+  background: #edf7ef;
+  color: #1f6b2a;
+  padding: 4px 8px;
+}
+
+.label-chip-button.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+button,
+select,
+input {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--text);
+  padding: 7px 10px;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+button:hover {
+  filter: brightness(0.95);
+}
+
+#deleteLabelButton {
+  border-color: #b42318;
+  background: #b42318;
+}
+
+.dangerButton {
+  border-color: #b42318;
+  background: #b42318;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  min-height: calc(100vh - 65px);
+}
+
+.galleryPanel {
+  padding: 16px;
+}
+
+.imageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.imageCard {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.imageCard.active {
+  outline: 3px solid var(--accent);
+}
+
+.imageCard.selected {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px rgba(47, 125, 50, 0.18);
+}
+
+.imageCard.testReserved {
+  border-color: #b7791f;
+}
+
+.imageCard.testReserved::after {
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  right: 6px;
+  border-radius: 6px;
+  background: #fff7e6;
+  color: #8a4b00;
+  content: "TEST";
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 6px;
+}
+
+.checkboxWrap {
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.image-select-checkbox {
+  appearance: auto;
+  display: block;
+  min-height: 0;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  opacity: 1;
+  cursor: pointer;
+}
+
+.imageCard img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.imageCard .caption {
+  padding: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.filename {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-labels {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.label-chip {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #b8d6bf;
+  border-radius: 999px;
+  background: #edf7ef;
+  color: #1f6b2a;
+  padding: 2px 7px;
+  font-size: 12px;
+}
+
+.label-remove {
+  min-height: 16px;
+  width: 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.label-chip.muted {
+  border-color: var(--line);
+  background: #f8fafc;
+  color: var(--muted);
+}
+
+.sidePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.sidePanel section {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.selectedImage {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #eef1f5;
+}
+
+.metaText {
+  min-height: 40px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.wideButton {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.labelButtonGrid {
+  margin-top: 8px;
+}
+
+.statusMessage {
+  min-height: 30px;
+  margin: 8px 0;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.statusMessage.success {
+  border-color: #9bc7a3;
+  background: #edf7ef;
+  color: #1f6b2a;
+}
+
+.statusMessage.error {
+  border-color: #e0a2a2;
+  background: #fff1f1;
+  color: #a12828;
+}
+
+#logBox {
+  min-height: 120px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101820;
+  color: #d7f8e8;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.testResults {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.testResultCard {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+.testResultCard img {
+  width: 82px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #eef1f5;
+}
+
+.testResultBody {
+  min-width: 0;
+}
+
+.predictedLabel {
+  display: inline-flex;
+  margin: 4px 0 6px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  padding: 3px 7px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.predictionList {
+  display: grid;
+  gap: 3px;
+}
+
+.predictionRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chartPanel {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+.chartTitle {
+  margin-bottom: 4px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chartPanel canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  background: #fff;
+}
+
+@media (max-width: 860px) {
+  .topbar,
+  .layout {
+    display: block;
+  }
+
+  .sidePanel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}

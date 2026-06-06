@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ESP32-S3 Vision Workflow</title>
+    <link rel="stylesheet" href="/style.css?v=20260606-training-charts" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>ESP32-S3 Vision Workflow</h1>
+      <div class="filters">
+        <select id="statusFilter">
+          <option value="">All status</option>
+          <option value="unlabeled">unlabeled</option>
+          <option value="labeled">labeled</option>
+        </select>
+        <select id="labelFilter">
+          <option value="">All labels</option>
+        </select>
+        <button id="refreshButton">Refresh</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="galleryPanel">
+        <div id="imageGrid" class="imageGrid"></div>
+      </section>
+
+      <aside class="sidePanel">
+        <section>
+          <h2>Label</h2>
+          <div class="labelCreator">
+            <input id="newLabelInput" placeholder="New label" />
+            <button id="addLabelButton">Add Label</button>
+          </div>
+          <div class="labelDeleter">
+            <select id="deleteLabelSelect">
+              <option value="">Select label to delete</option>
+            </select>
+            <button id="deleteLabelButton">Delete Label</button>
+          </div>
+          <div id="labelPalette" class="labelPalette"></div>
+          <img id="selectedImage" class="selectedImage" alt="" />
+          <div id="selectedMeta" class="metaText">No image selected</div>
+          <button id="nextButton" class="wideButton">Next</button>
+        </section>
+
+        <section>
+          <h2>Bulk Label</h2>
+          <div id="selectedCount" class="metaText">0 selected</div>
+          <div id="statusMessage" class="statusMessage" role="status"></div>
+          <div class="buttonRow">
+            <button id="selectAllButton">Select all</button>
+            <button id="clearSelectionButton">Clear</button>
+          </div>
+          <button id="deleteUnknownButton" class="wideButton dangerButton">Delete unknown images</button>
+          <div id="bulkLabelButtons" class="labelPalette"></div>
+          <button id="downloadCsvButton" class="wideButton">Download label CSV</button>
+        </section>
+
+        <section>
+          <h2>Training</h2>
+          <label>Dataset name <input id="datasetName" value="dataset_v001" /></label>
+          <label>Image size <input id="imageSize" type="number" value="96" min="32" max="224" /></label>
+          <button id="exportDatasetButton" class="wideButton">Export dataset</button>
+          <label>Dataset select <select id="datasetSelect"><option value="">Select exported dataset</option></select></label>
+          <label>Dataset path <input id="datasetPath" value="data/exported/dataset_v001" /></label>
+          <label>Model select <select id="modelSelect"><option value="">Select trained model</option></select></label>
+          <label>Epochs <input id="epochs" type="number" value="30" min="1" /></label>
+          <label>Batch size <input id="batchSize" type="number" value="16" min="1" /></label>
+          <button id="startTrainingButton" class="wideButton">Start training</button>
+          <div id="trainingProgress" class="metaText">Training progress: idle</div>
+          <div class="chartPanel">
+            <div class="chartTitle">Loss</div>
+            <canvas id="lossChart" width="320" height="160"></canvas>
+          </div>
+          <div class="chartPanel">
+            <div class="chartTitle">Accuracy</div>
+            <canvas id="accuracyChart" width="320" height="160"></canvas>
+          </div>
+          <button id="testModelButton" class="wideButton">Test dataset images</button>
+          <div id="testResults" class="testResults"></div>
+          <pre id="logBox"></pre>
+        </section>
+      </aside>
+    </main>
+
+    <script src="/app.js?v=20260606-training-charts"></script>
+  </body>
+</html>
