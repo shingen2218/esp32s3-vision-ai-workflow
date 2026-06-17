@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ESP32-S3 Vision Workflow</title>
-    <link rel="stylesheet" href="/style.css?v=20260606-training-charts" />
+    <link rel="stylesheet" href="/style.css?v=20260617-capture-proxy-feedback" />
   </head>
   <body>
     <header class="topbar">
@@ -21,6 +21,44 @@
         <button id="refreshButton">Refresh</button>
       </div>
     </header>
+
+    <section class="deviceConfigPanel">
+      <div>
+        <h2>ESP32-S3 Wi-Fi Settings</h2>
+        <p>Saved to capture_upload/main/app_config.h. Build and write the capture firmware to apply changes.</p>
+      </div>
+      <label>SSID <input id="wifiSsidInput" list="wifiSsidOptions" autocomplete="off" /></label>
+      <datalist id="wifiSsidOptions"></datalist>
+      <label>Password <input id="wifiPasswordInput" type="password" placeholder="Enter Wi-Fi password" autocomplete="off" /></label>
+      <button id="toggleWifiPasswordButton" type="button">Show password</button>
+      <label>Server URL <input id="serverUploadUrlInput" /></label>
+      <label>Device ID <input id="deviceIdInput" /></label>
+      <button id="saveWifiConfigButton">Save Wi-Fi settings</button>
+      <button id="refreshDevicePortsButton">Refresh ports</button>
+      <label>ESP32-S3 COM <select id="devicePortSelect"><option value="">Select COM port</option></select></label>
+      <button id="writeWifiFirmwareButton" class="dangerButton">Write Wi-Fi firmware</button>
+      <div id="wifiFlashProgress" class="wifiFlashProgress" aria-live="polite"></div>
+      <label>ESP32-S3 URL <input id="esp32BaseUrlInput" placeholder="Find camera IPで自動入力" /></label>
+      <button id="discoverCameraButton">Find camera IP</button>
+      <button id="openRemoteCameraButton">Open camera</button>
+      <button id="openAiCameraButton">Open AI camera</button>
+    </section>
+
+    <dialog id="remoteCameraDialog" class="remoteCameraDialog">
+      <div class="remoteCameraHeader">
+        <h2>ESP32-S3 Camera</h2>
+        <button id="closeRemoteCameraButton" type="button">Close</button>
+      </div>
+      <div class="remoteCameraBody">
+        <img id="remoteCameraStream" alt="ESP32-S3 live stream" />
+        <div id="remoteLabelOverlay" class="remoteLabelOverlay">Inference idle</div>
+        <div id="remoteShutterFlash" class="remoteShutterFlash"></div>
+      </div>
+      <div class="remoteCameraActions">
+        <button id="remoteCaptureButton" class="dangerButton">Capture</button>
+        <div id="remoteCameraStatus" class="metaText">Idle</div>
+      </div>
+    </dialog>
 
     <main class="layout">
       <section class="galleryPanel">
@@ -81,11 +119,18 @@
           </div>
           <button id="testModelButton" class="wideButton">Test dataset images</button>
           <div id="testResults" class="testResults"></div>
+          <button id="prepareInferenceButton" class="wideButton">Prepare model package</button>
+          <div id="flashProgress" class="flashProgress"></div>
+          <div class="buttonRow">
+            <button id="refreshPortsButton">Refresh ports</button>
+            <select id="serialPortSelect"><option value="">Select COM port</option></select>
+          </div>
+          <button id="flashAiModelButton" class="wideButton">Write model only</button>
           <pre id="logBox"></pre>
         </section>
       </aside>
     </main>
 
-    <script src="/app.js?v=20260606-training-charts"></script>
+    <script src="/app.js?v=20260617-model-partition"></script>
   </body>
 </html>

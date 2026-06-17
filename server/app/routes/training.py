@@ -8,12 +8,15 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from ..config import MODEL_DIR, PROJECT_ROOT
-from ..schemas import TrainingStartRequest
+from ..espidf_service import idf_command_and_env, run_idf
+from ..schemas import FirmwareBuildRequest, FirmwareFlashRequest, ModelExportRequest, TrainingStartRequest
 
 router = APIRouter(prefix="/api/training", tags=["training"])
 TRAINING_PROCESSES: dict[str, subprocess.Popen] = {}
 EPOCH_PATTERN = re.compile(r"Epoch\s+(\d+)/(\d+)")
 METRIC_PATTERN = re.compile(r"(accuracy|loss|val_accuracy|val_loss):\s*([0-9.]+)")
+AI_MODEL_PARTITION_OFFSET = "0x310000"
+AI_MODEL_PARTITION_SIZE = 0x300000
 
 
 def _count_training_images(dataset_path: Path) -> int:
@@ -41,6 +44,11 @@ def _read_run_info(model_dir: Path) -> dict:
     run_info_path = model_dir / "run_info.json"
     if not run_info_path.exists():
         return {}
+    try:
+        data = json.loads(run_info_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _parse_training_history(log_path: Path) -> list[dict]:
@@ -60,11 +68,74 @@ def _parse_training_history(log_path: Path) -> list[dict]:
             history.append({"epoch": current_epoch, "total_epochs": total_epochs, **metrics})
             current_epoch = None
     return history
-    try:
-        data = json.loads(run_info_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
+
+
+def _resolve_dataset_for_model(model_dir: Path, request_dataset_path: str | None) -> Path:
+    if request_dataset_path:
+        dataset_path = (PROJECT_ROOT / request_dataset_path).resolve()
+    else:
+        run_info = _read_run_info(model_dir)
+        dataset_value = run_info.get("dataset_path") or run_info.get("dataset_path_relative")
+        if not dataset_value:
+            raise HTTPException(
+                status_code=400,
+                detail="dataset path is not known. Select a dataset before exporting TFLite.",
+            )
+        dataset_path = Path(dataset_value)
+        if not dataset_path.is_absolute():
+            dataset_path = (PROJECT_ROOT / dataset_path).resolve()
+    if not (dataset_path / "dataset_info.json").exists():
+        raise HTTPException(status_code=400, detail=f"dataset_info.json not found: {dataset_path}")
+    return dataset_path
+
+
+def _run_command(command: list[str], timeout: int, failure_message: str) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+    )
+    if completed.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": failure_message,
+                "returncode": completed.returncode,
+                "stdout": completed.stdout[-4000:],
+                "stderr": completed.stderr[-4000:],
+            },
+        )
+    return completed
+
+
+def _c_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _write_model_labels_header(labels_path: Path, output_path: Path) -> list[str]:
+    if not labels_path.exists():
+        raise HTTPException(status_code=400, detail=f"labels.txt not found: {labels_path}")
+    labels = [line.strip() for line in labels_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if not labels:
+        raise HTTPException(status_code=400, detail=f"labels.txt has no labels: {labels_path}")
+    rows = "\n".join(f'    "{_c_string(label)}",' for label in labels)
+    output_path.write_text(
+        (
+            "#pragma once\n\n"
+            "#ifdef __cplusplus\n"
+            'extern "C" {\n'
+            "#endif\n\n"
+            f"#define MODEL_LABEL_COUNT {len(labels)}\n\n"
+            f"static const char *const MODEL_LABELS[MODEL_LABEL_COUNT] = {{\n{rows}\n}};\n\n"
+            "#ifdef __cplusplus\n"
+            "}\n"
+            "#endif\n"
+        ),
+        encoding="utf-8",
+    )
+    return labels
 
 
 @router.get("/models")
@@ -99,6 +170,10 @@ def list_models():
                 "batch_size": run_info.get("batch_size"),
                 "model_type": run_info.get("model_type"),
                 "labels": labels,
+                "has_float32_tflite": (model_dir / "model_float32.tflite").exists(),
+                "has_int8_tflite": (model_dir / "model_int8.tflite").exists(),
+                "has_c_array": (model_dir / "model_data.cc").exists() and (model_dir / "model_data.h").exists(),
+                "has_ai_model_package": (model_dir / "ai_model.bin").exists(),
                 "created_at": datetime.fromtimestamp(model_dir.stat().st_mtime).isoformat(),
             }
         )
@@ -208,6 +283,281 @@ def read_training_history(run_id: str):
     history = _parse_training_history(log_path)
     final = history[-1] if history else None
     return {"ok": True, "run_id": run_id, "history": history, "final": final}
+
+
+@router.post("/{run_id}/export-tflite")
+def export_tflite(run_id: str, request: ModelExportRequest | None = None):
+    model_dir = MODEL_DIR / run_id
+    model_path = model_dir / "model.keras"
+    if not model_path.exists():
+        raise HTTPException(status_code=400, detail=f"model.keras not found for run_id: {run_id}")
+    dataset_path = _resolve_dataset_for_model(model_dir, request.dataset_path if request else None)
+    command = [
+        sys.executable,
+        str(PROJECT_ROOT / "trainer" / "export_tflite.py"),
+        "--model",
+        str(model_path),
+        "--dataset",
+        str(dataset_path),
+        "--out-dir",
+        str(model_dir),
+        "--quiet-tf-log",
+    ]
+    completed = _run_command(command, timeout=600, failure_message="TFLite export failed")
+    float_path = model_dir / "model_float32.tflite"
+    int8_path = model_dir / "model_int8.tflite"
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "dataset": str(dataset_path),
+        "model_float32_tflite": str(float_path),
+        "model_int8_tflite": str(int8_path),
+        "model_float32_size": float_path.stat().st_size if float_path.exists() else None,
+        "model_int8_size": int8_path.stat().st_size if int8_path.exists() else None,
+        "stdout": completed.stdout[-2000:],
+        "stderr": completed.stderr[-2000:],
+    }
+
+
+@router.post("/{run_id}/export-c-array")
+def export_c_array(run_id: str):
+    model_dir = MODEL_DIR / run_id
+    int8_path = model_dir / "model_int8.tflite"
+    if not int8_path.exists():
+        raise HTTPException(status_code=400, detail=f"model_int8.tflite not found for run_id: {run_id}")
+    model_cc = model_dir / "model_data.cc"
+    model_h = model_dir / "model_data.h"
+    labels_path = model_dir / "labels.txt"
+    firmware_main = PROJECT_ROOT / "firmware" / "inference_classification" / "main"
+    firmware_cc = firmware_main / "model_data.cc"
+    firmware_h = firmware_main / "model_data.h"
+    firmware_labels_h = firmware_main / "model_labels.h"
+    command = [
+        sys.executable,
+        str(PROJECT_ROOT / "tools" / "convert_tflite_to_c_array.py"),
+        "--input",
+        str(int8_path),
+        "--cc",
+        str(model_cc),
+        "--header",
+        str(model_h),
+    ]
+    completed = _run_command(command, timeout=120, failure_message="C array export failed")
+    firmware_main.mkdir(parents=True, exist_ok=True)
+    firmware_cc.write_text(model_cc.read_text(encoding="utf-8"), encoding="utf-8")
+    firmware_h.write_text(model_h.read_text(encoding="utf-8"), encoding="utf-8")
+    labels = _write_model_labels_header(labels_path, firmware_labels_h)
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "labels": labels,
+        "model_data_cc": str(model_cc),
+        "model_data_h": str(model_h),
+        "firmware_model_data_cc": str(firmware_cc),
+        "firmware_model_data_h": str(firmware_h),
+        "firmware_model_labels_h": str(firmware_labels_h),
+        "model_data_cc_size": model_cc.stat().st_size,
+        "model_data_h_size": model_h.stat().st_size,
+        "stdout": completed.stdout[-2000:],
+        "stderr": completed.stderr[-2000:],
+    }
+
+
+@router.post("/{run_id}/export-ai-model-package")
+def export_ai_model_package(run_id: str):
+    model_dir = MODEL_DIR / run_id
+    int8_path = model_dir / "model_int8.tflite"
+    labels_path = model_dir / "labels.txt"
+    if not int8_path.exists():
+        raise HTTPException(status_code=400, detail=f"model_int8.tflite not found for run_id: {run_id}")
+    if not labels_path.exists():
+        raise HTTPException(status_code=400, detail=f"labels.txt not found for run_id: {run_id}")
+
+    package_path = model_dir / "ai_model.bin"
+    command = [
+        sys.executable,
+        str(PROJECT_ROOT / "tools" / "build_ai_model_package.py"),
+        "--model",
+        str(int8_path),
+        "--labels",
+        str(labels_path),
+        "--output",
+        str(package_path),
+    ]
+    completed = _run_command(command, timeout=120, failure_message="AI model package export failed")
+    package_size = package_path.stat().st_size if package_path.exists() else 0
+    if package_size <= 0:
+        raise HTTPException(status_code=500, detail="ai_model.bin was not created")
+    if package_size > AI_MODEL_PARTITION_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "ai_model.bin is larger than the ai_model partition",
+                "package_size": package_size,
+                "partition_size": AI_MODEL_PARTITION_SIZE,
+            },
+        )
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "ai_model_bin": str(package_path),
+        "ai_model_size": package_size,
+        "partition_offset": AI_MODEL_PARTITION_OFFSET,
+        "partition_size": AI_MODEL_PARTITION_SIZE,
+        "stdout": completed.stdout[-2000:],
+        "stderr": completed.stderr[-2000:],
+    }
+
+
+@router.post("/{run_id}/prepare-inference-firmware")
+def prepare_inference_firmware(run_id: str, request: ModelExportRequest | None = None):
+    tflite_result = export_tflite(run_id, request)
+    package_result = export_ai_model_package(run_id)
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "steps": {
+            "export_tflite": tflite_result,
+            "export_ai_model_package": package_result,
+        },
+        "message": "ai_model.bin is ready to write",
+    }
+
+
+@router.post("/build-unified-camera-ai-firmware")
+def build_unified_camera_ai_firmware(request: FirmwareBuildRequest | None = None):
+    firmware_dir = PROJECT_ROOT / "firmware" / "capture_upload"
+    commands = []
+    if request and request.clean:
+        commands.append(["fullclean"])
+    commands.append(["build"])
+    last_stdout = ""
+    last_stderr = ""
+    for args in commands:
+        completed = run_idf(
+            firmware_dir,
+            args,
+            timeout=900,
+            failure_message=f"ESP-IDF command failed: {' '.join(args)}",
+        )
+        last_stdout = completed.stdout
+        last_stderr = completed.stderr
+    return {
+        "ok": True,
+        "firmware": str(firmware_dir),
+        "message": "unified camera AI firmware build passed",
+        "stdout": last_stdout[-4000:],
+        "stderr": last_stderr[-4000:],
+    }
+
+
+@router.post("/build-inference-firmware")
+def build_inference_firmware(request: FirmwareBuildRequest | None = None):
+    firmware_dir = PROJECT_ROOT / "firmware" / "inference_classification"
+    commands = []
+    if request and request.clean:
+        commands.append(["fullclean"])
+    commands.append(["build"])
+    last_stdout = ""
+    last_stderr = ""
+    for args in commands:
+        completed = run_idf(
+            firmware_dir,
+            args,
+            timeout=900,
+            failure_message=f"ESP-IDF command failed: {' '.join(args)}",
+        )
+        last_stdout = completed.stdout
+        last_stderr = completed.stderr
+    return {
+        "ok": True,
+        "firmware": str(firmware_dir),
+        "message": "inference firmware build passed",
+        "stdout": last_stdout[-4000:],
+        "stderr": last_stderr[-4000:],
+    }
+
+
+@router.post("/{run_id}/flash-ai-model")
+def flash_ai_model(run_id: str, request: FirmwareFlashRequest):
+    port = request.port.strip().upper()
+    if not re.fullmatch(r"COM\d{1,3}", port):
+        raise HTTPException(status_code=400, detail="port must look like COM5")
+
+    model_dir = MODEL_DIR / run_id
+    package_path = model_dir / "ai_model.bin"
+    if not package_path.exists():
+        export_ai_model_package(run_id)
+    if not package_path.exists():
+        raise HTTPException(status_code=400, detail=f"ai_model.bin not found for run_id: {run_id}")
+    package_size = package_path.stat().st_size
+    if package_size > AI_MODEL_PARTITION_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "ai_model.bin is larger than the ai_model partition",
+                "package_size": package_size,
+                "partition_size": AI_MODEL_PARTITION_SIZE,
+            },
+        )
+
+    idf_prefix, idf_env = idf_command_and_env()
+    python_exe = idf_prefix[0] if idf_prefix and Path(idf_prefix[0]).name.lower().startswith("python") else sys.executable
+    command = [
+        python_exe,
+        "-m",
+        "esptool",
+        "--chip",
+        "esp32s3",
+        "-p",
+        port,
+        "-b",
+        "460800",
+        "--before",
+        "default_reset",
+        "--after",
+        "hard_reset",
+        "write_flash",
+        "--flash_mode",
+        "dio",
+        "--flash_freq",
+        "80m",
+        "--flash_size",
+        "8MB",
+        AI_MODEL_PARTITION_OFFSET,
+        str(package_path),
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=300,
+        env=idf_env,
+    )
+    if completed.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "failed to flash ai_model partition",
+                "command": " ".join(command),
+                "returncode": completed.returncode,
+                "stdout": completed.stdout[-4000:],
+                "stderr": completed.stderr[-4000:],
+            },
+        )
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "port": port,
+        "partition": "ai_model",
+        "offset": AI_MODEL_PARTITION_OFFSET,
+        "ai_model_bin": str(package_path),
+        "ai_model_size": package_size,
+        "message": "ai_model partition flashed",
+        "stdout": completed.stdout[-4000:],
+        "stderr": completed.stderr[-4000:],
+    }
 
 
 @router.post("/{run_id}/test-reserved-images")

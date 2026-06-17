@@ -1,4 +1,4 @@
-# Local secrets and device-specific settings
+# Local private overrides
 firmware/capture_upload/main/app_config.private.h
 
 # Captured images, labels, datasets, trained models, and local artifacts

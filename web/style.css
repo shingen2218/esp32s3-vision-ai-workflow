@@ -47,6 +47,34 @@ h2 {
   flex-wrap: wrap;
 }
 
+.deviceConfigPanel {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+  align-items: end;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #eef7ff;
+}
+
+.deviceConfigPanel h2 {
+  margin-bottom: 4px;
+}
+
+.deviceConfigPanel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.deviceConfigPanel label {
+  margin: 0;
+}
+
+.deviceConfigPanel button {
+  min-width: 120px;
+}
+
 .labelCreator,
 .labelDeleter {
   display: grid;
@@ -97,6 +125,12 @@ button {
 
 button:hover {
   filter: brightness(0.95);
+}
+
+button:disabled {
+  cursor: wait;
+  filter: grayscale(0.25);
+  opacity: 0.65;
 }
 
 #deleteLabelButton {
@@ -384,6 +418,182 @@ label {
   font-size: 12px;
 }
 
+.artifactStatus {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.artifactSummary {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.artifactSummary.ready {
+  border-color: #9bc7a3;
+  background: #edf7ef;
+  color: #1f6b2a;
+}
+
+.artifactSummary.missing {
+  border-color: #e0a2a2;
+  background: #fff1f1;
+  color: #a12828;
+}
+
+.artifactRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.artifactRow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifactRow.ready strong {
+  color: #1f6b2a;
+}
+
+.artifactRow.missing strong {
+  color: #a12828;
+}
+
+.artifactRow small {
+  color: var(--muted);
+}
+
+.flashProgress {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+}
+
+.flashStep {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--muted);
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.flashStep.done {
+  border-color: #9bc7a3;
+  background: #edf7ef;
+  color: #1f6b2a;
+}
+
+.flashStep.active {
+  border-color: #a9c7df;
+  background: #eef7ff;
+  color: #146c94;
+}
+
+.wifiFlashProgress {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+
+.wifiFlashBar {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5ebf0;
+  border: 1px solid var(--line);
+}
+
+.wifiFlashBar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #2f7da1;
+  transition: width 240ms ease;
+}
+
+.wifiFlashBar.done span {
+  background: #2f8d46;
+}
+
+.wifiFlashBar.error span {
+  background: #b93a3a;
+}
+
+.wifiFlashBar.indeterminate span {
+  min-width: 35%;
+  animation: wifi-progress-pulse 1.2s ease-in-out infinite;
+}
+
+.wifiFlashMessage {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.wifiFlashSteps {
+  display: grid;
+  gap: 5px;
+}
+
+.wifiFlashStep {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--muted);
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.wifiFlashStep.done {
+  border-color: #9bc7a3;
+  background: #edf7ef;
+  color: #1f6b2a;
+}
+
+.wifiFlashStep.active {
+  border-color: #a9c7df;
+  background: #eef7ff;
+  color: #146c94;
+}
+
+.wifiFlashStep.error {
+  border-color: #e0a1a1;
+  background: #fff0f0;
+  color: #a12828;
+}
+
+@keyframes wifi-progress-pulse {
+  0% {
+    transform: translateX(-80%);
+  }
+  50% {
+    transform: translateX(35%);
+  }
+  100% {
+    transform: translateX(180%);
+  }
+}
+
 .chartPanel {
   margin-top: 10px;
   border: 1px solid var(--line);
@@ -407,10 +617,110 @@ label {
   background: #fff;
 }
 
+.remoteCameraDialog {
+  width: min(900px, calc(100vw - 32px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0;
+  background: var(--panel);
+}
+
+.remoteCameraDialog::backdrop {
+  background: rgba(16, 24, 32, 0.58);
+}
+
+.remoteCameraHeader,
+.remoteCameraActions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.remoteCameraActions {
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.remoteCameraBody {
+  position: relative;
+  overflow: hidden;
+  background: #101820;
+  padding: 10px;
+}
+
+.remoteCameraBody img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: #000;
+}
+
+.remoteLabelOverlay {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  max-width: calc(100% - 36px);
+  display: none;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(10, 18, 24, 0.78);
+  color: #f8fbfd;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.remoteLabelOverlay.visible {
+  display: flex;
+}
+
+.remoteLabelOverlay.active {
+  background: rgba(18, 92, 68, 0.84);
+}
+
+.remoteShutterFlash {
+  position: absolute;
+  inset: 10px;
+  border-radius: 4px;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.remoteShutterFlash.flash {
+  animation: shutter-flash 520ms ease-out;
+}
+
+@keyframes shutter-flash {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.94;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @media (max-width: 860px) {
   .topbar,
+  .deviceConfigPanel,
   .layout {
     display: block;
+  }
+
+  .deviceConfigPanel > * {
+    margin-bottom: 8px;
   }
 
   .sidePanel {

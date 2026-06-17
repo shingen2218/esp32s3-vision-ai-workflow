@@ -27,9 +27,33 @@ const trainingProgress = document.querySelector("#trainingProgress");
 const testResults = document.querySelector("#testResults");
 const lossChart = document.querySelector("#lossChart");
 const accuracyChart = document.querySelector("#accuracyChart");
+const artifactStatus = document.querySelector("#artifactStatus");
+const flashProgress = document.querySelector("#flashProgress");
+const serialPortSelect = document.querySelector("#serialPortSelect");
+const devicePortSelect = document.querySelector("#devicePortSelect");
+const wifiFlashProgress = document.querySelector("#wifiFlashProgress");
+const wifiSsidInput = document.querySelector("#wifiSsidInput");
+const wifiSsidOptions = document.querySelector("#wifiSsidOptions");
+const wifiPasswordInput = document.querySelector("#wifiPasswordInput");
+const toggleWifiPasswordButton = document.querySelector("#toggleWifiPasswordButton");
+const serverUploadUrlInput = document.querySelector("#serverUploadUrlInput");
+const deviceIdInput = document.querySelector("#deviceIdInput");
+const esp32BaseUrlInput = document.querySelector("#esp32BaseUrlInput");
+const discoverCameraButton = document.querySelector("#discoverCameraButton");
+const openAiCameraButton = document.querySelector("#openAiCameraButton");
+const remoteCameraDialog = document.querySelector("#remoteCameraDialog");
+const remoteCameraStream = document.querySelector("#remoteCameraStream");
+const remoteCameraStatus = document.querySelector("#remoteCameraStatus");
+const remoteCaptureButton = document.querySelector("#remoteCaptureButton");
+const remoteShutterFlash = document.querySelector("#remoteShutterFlash");
+const remoteLabelOverlay = document.querySelector("#remoteLabelOverlay");
 let trainingPollTimer = null;
 let currentTrainingRunId = "";
 let availableModels = [];
+let firmwareArtifacts = [];
+let flashTargets = [];
+let aiCameraTimer = null;
+let aiCameraRunning = false;
 
 function debugLog(message, value) {
   if (!DEBUG) return;
@@ -43,6 +67,21 @@ function debugLog(message, value) {
 function showStatus(message, type = "info") {
   statusMessage.textContent = message;
   statusMessage.className = `statusMessage ${type}`;
+}
+
+function formatApiError(data) {
+  const detail = data?.detail ?? data;
+  if (!detail || typeof detail === "string") {
+    return detail || "Request failed.";
+  }
+  const lines = [];
+  if (detail.message) lines.push(detail.message);
+  if (detail.hint) lines.push(`hint: ${detail.hint}`);
+  if (detail.command) lines.push(`command: ${detail.command}`);
+  if (detail.returncode !== undefined) lines.push(`returncode: ${detail.returncode}`);
+  if (detail.stdout) lines.push("", "stdout:", detail.stdout);
+  if (detail.stderr) lines.push("", "stderr:", detail.stderr);
+  return lines.length ? lines.join("\n") : JSON.stringify(data, null, 2);
 }
 
 function drawChart(canvas, history, series, options = {}) {
@@ -727,7 +766,11 @@ async function loadModels() {
       option.value = model.run_id;
       const datasetName = model.dataset_path_relative ? model.dataset_path_relative.split(/[\\\\/]/).pop() : "unknown dataset";
       const labels = Array.isArray(model.labels) ? model.labels.join(",") : "";
-      option.textContent = `${model.run_id} / ${datasetName} / ${labels}`;
+      const exportState = [
+        model.has_int8_tflite ? "int8" : "no-int8",
+        model.has_ai_model_package ? "ai-model" : "no-ai-model",
+      ].join(" ");
+      option.textContent = `${model.run_id} / ${datasetName} / ${labels} / ${exportState}`;
       modelSelect.appendChild(option);
     }
     if ([...modelSelect.options].some((option) => option.value === currentValue)) {
@@ -735,6 +778,729 @@ async function loadModels() {
     }
   } catch (error) {
     showStatus(`Failed to load models: ${error.message}`, "error");
+  }
+}
+
+function selectedModelRunId() {
+  const runId = modelSelect.value || currentTrainingRunId;
+  if (!runId) {
+    showStatus("Select a trained model first", "error");
+    return "";
+  }
+  return runId;
+}
+
+async function exportSelectedTflite() {
+  const runId = selectedModelRunId();
+  if (!runId) return;
+  const datasetPath = document.querySelector("#datasetPath").value;
+  showStatus(`Exporting TFLite for ${runId}...`, "info");
+  logBox.textContent = "Exporting TFLite. This can take a while...";
+  try {
+    const response = await fetch(`/api/training/${encodeURIComponent(runId)}/export-tflite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataset_path: datasetPath || null }),
+    });
+    const data = await response.json();
+    logBox.textContent = JSON.stringify(data, null, 2);
+    if (!response.ok || !data.ok) {
+      showStatus(`TFLite export failed: ${response.status}`, "error");
+      return;
+    }
+    showStatus(`Generated model_int8.tflite (${data.model_int8_size} bytes)`, "success");
+    await loadModels();
+    modelSelect.value = runId;
+  } catch (error) {
+    showStatus(`TFLite export failed: ${error.message}`, "error");
+    logBox.textContent = String(error);
+  }
+}
+
+async function exportSelectedCArray() {
+  const runId = selectedModelRunId();
+  if (!runId) return;
+  showStatus(`Exporting C array for ${runId}...`, "info");
+  logBox.textContent = "Exporting C array and copying it to firmware...";
+  try {
+    const response = await fetch(`/api/training/${encodeURIComponent(runId)}/export-c-array`, {
+      method: "POST",
+    });
+    const data = await response.json();
+    logBox.textContent = JSON.stringify(data, null, 2);
+    if (!response.ok || !data.ok) {
+      showStatus(`C array export failed: ${response.status}`, "error");
+      return;
+    }
+    showStatus("Generated model_data.cc/h and copied them to inference firmware", "success");
+    await loadModels();
+    modelSelect.value = runId;
+  } catch (error) {
+    showStatus(`C array export failed: ${error.message}`, "error");
+    logBox.textContent = String(error);
+  }
+}
+
+async function buildInferenceFirmware() {
+  showStatus("Building inference firmware...", "info");
+  logBox.textContent = "Building inference firmware. Start the server from ESP-IDF PowerShell if this fails.";
+  try {
+    const response = await fetch("/api/training/build-inference-firmware", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clean: false }),
+    });
+    const data = await response.json();
+    logBox.textContent = JSON.stringify(data, null, 2);
+    if (!response.ok || !data.ok) {
+      showStatus(`Firmware build failed: ${response.status}`, "error");
+      return;
+    }
+    showStatus("Inference firmware build passed", "success");
+    await loadInferenceArtifacts();
+  } catch (error) {
+    showStatus(`Firmware build failed: ${error.message}`, "error");
+    logBox.textContent = String(error);
+  }
+}
+
+async function prepareInferenceFirmware() {
+  const runId = selectedModelRunId();
+  if (!runId) return;
+  const datasetPath = document.querySelector("#datasetPath").value;
+  showStatus(`Preparing model package for ${runId}...`, "info");
+  logBox.textContent = [
+    "Preparing model package...",
+    "1. Export TFLite",
+    "2. Build ai_model.bin",
+  ].join("\n");
+  try {
+    const response = await fetch(`/api/training/${encodeURIComponent(runId)}/prepare-inference-firmware`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataset_path: datasetPath || null }),
+    });
+    const data = await response.json();
+    logBox.textContent = [
+      "Prepare model package completed.",
+      `run_id: ${data.run_id}`,
+      `model_int8.tflite: ${data.steps?.export_tflite?.model_int8_size || "-"} bytes`,
+      `ai_model.bin: ${data.steps?.export_ai_model_package?.ai_model_size || "-"} bytes`,
+      `model partition offset: ${data.steps?.export_ai_model_package?.partition_offset || "0x310000"}`,
+      "",
+      "Next: select COM port and click Write model only.",
+    ].join("\n");
+    if (!response.ok || !data.ok) {
+      showStatus(`Prepare firmware failed: ${response.status}`, "error");
+      return;
+    }
+    showStatus("Model package is ready to write", "success");
+    renderFlashSteps("prepared");
+    await loadModels();
+    modelSelect.value = runId;
+  } catch (error) {
+    showStatus(`Prepare model package failed: ${error.message}`, "error");
+    logBox.textContent = String(error);
+  }
+}
+
+function renderFlashSteps(state = "idle") {
+  const steps = [
+    ["select", "Model selected"],
+    ["tflite", "Export TFLite"],
+    ["package", "Build model package"],
+    ["port", "COM port selected"],
+    ["flash", "Write model only"],
+  ];
+  const completedByState = {
+    idle: [],
+    prepared: ["select", "tflite", "package"],
+    flashing: ["select", "tflite", "package", "port"],
+    done: ["select", "tflite", "package", "port", "flash"],
+  };
+  const activeByState = {
+    idle: "",
+    prepared: "",
+    flashing: "flash",
+    done: "",
+  };
+  const completed = new Set(completedByState[state] || []);
+  const active = activeByState[state] || "";
+  flashProgress.innerHTML = steps
+    .map(([key, label]) => {
+      const className = completed.has(key) ? "done" : active === key ? "active" : "";
+      const marker = completed.has(key) ? "OK" : active === key ? "..." : "--";
+      return `<div class="flashStep ${className}"><span>${escapeHtml(label)}</span><strong>${marker}</strong></div>`;
+    })
+    .join("");
+}
+
+function renderWifiFirmwareProgress(state = "idle", message = "") {
+  if (!wifiFlashProgress) return;
+  const steps = [
+    ["save", "Save Wi-Fi settings"],
+    ["write", "Write firmware"],
+    ["verify", "Restart and find camera"],
+  ];
+  const stateMap = {
+    idle: { percent: 0, done: [], active: "", tone: "", label: "" },
+    saving: { percent: 22, done: [], active: "save", tone: "active", label: "Saving settings..." },
+    writing: { percent: 68, done: ["save"], active: "write", tone: "active indeterminate", label: "Writing firmware..." },
+    verifying: { percent: 88, done: ["save", "write"], active: "verify", tone: "active indeterminate", label: "Restarting and checking camera..." },
+    done: { percent: 100, done: ["save", "write", "verify"], active: "", tone: "done", label: "Write completed" },
+    error: { percent: 100, done: [], active: "", tone: "error", label: "Write failed" },
+  };
+  const current = stateMap[state] || stateMap.idle;
+  const done = new Set(current.done);
+  const rows = steps
+    .map(([key, label]) => {
+      const className = done.has(key) ? "done" : current.active === key ? "active" : state === "error" ? "error" : "";
+      const marker = done.has(key) ? "OK" : current.active === key ? "..." : "--";
+      return `<div class="wifiFlashStep ${className}"><span>${escapeHtml(label)}</span><strong>${marker}</strong></div>`;
+    })
+    .join("");
+  wifiFlashProgress.innerHTML = `
+    <div class="wifiFlashBar ${current.tone}">
+      <span style="width: ${current.percent}%"></span>
+    </div>
+    <div class="wifiFlashMessage">${escapeHtml(message || current.label)}</div>
+    <div class="wifiFlashSteps">${rows}</div>
+  `;
+}
+
+function formatBytes(value) {
+  if (typeof value !== "number") return "-";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function loadInferenceArtifacts() {
+  if (!artifactStatus) return;
+  try {
+    const response = await fetch("/api/firmware/artifacts");
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      artifactStatus.innerHTML = `<div class="artifactRow missing">Failed to load firmware artifacts</div>`;
+      return;
+    }
+    firmwareArtifacts = data.firmwares || [];
+    flashTargets = data.flash_targets || [];
+    const selectedTarget = flashTargets.find((item) => item.id === "capture_full") || flashTargets[0];
+    const selected = firmwareArtifacts.find((item) => item.name === selectedTarget?.firmware) || firmwareArtifacts[0];
+    if (!selected) {
+      artifactStatus.innerHTML = `<div class="artifactRow missing">No firmware artifacts found</div>`;
+      return;
+    }
+    const rows = (selectedTarget?.files || [])
+      .map((item) => {
+        const status = item?.exists ? "OK" : "NG";
+        const className = item?.exists ? "ready" : "missing";
+        const label = `${item.address} ${item.relative_file}`;
+        return `
+          <div class="artifactRow ${className}">
+            <span>${label}</span>
+            <strong>${status}</strong>
+            <small>${formatBytes(item?.size)}</small>
+          </div>
+        `;
+      })
+      .join("");
+    artifactStatus.innerHTML = `
+      <div class="artifactSummary ${selectedTarget?.ready_to_flash ? "ready" : "missing"}">
+        ${escapeHtml(selectedTarget?.label || selected.label)}: ${selectedTarget?.ready_to_flash ? "Ready to flash" : "Not ready"}
+      </div>
+      ${rows}
+    `;
+  } catch (error) {
+    artifactStatus.innerHTML = `<div class="artifactRow missing">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+async function loadSerialPorts() {
+  try {
+    const currentInferenceValue = serialPortSelect.value;
+    const currentDeviceValue = devicePortSelect.value;
+    const response = await fetch("/api/firmware/serial-ports");
+    const data = await response.json();
+    const selects = [serialPortSelect, devicePortSelect];
+    for (const select of selects) {
+      select.innerHTML = `<option value="">Select COM port</option>`;
+      for (const item of data.ports || []) {
+        const option = document.createElement("option");
+        option.value = item.port;
+        option.textContent = `${item.port} / ${item.name}`;
+        select.appendChild(option);
+      }
+    }
+    if ([...serialPortSelect.options].some((option) => option.value === currentInferenceValue)) {
+      serialPortSelect.value = currentInferenceValue;
+    }
+    if ([...devicePortSelect.options].some((option) => option.value === currentDeviceValue)) {
+      devicePortSelect.value = currentDeviceValue;
+    } else if (serialPortSelect.value) {
+      devicePortSelect.value = serialPortSelect.value;
+    }
+    showStatus(`Found ${(data.ports || []).length} serial ports`, "info");
+  } catch (error) {
+    showStatus(`Failed to load serial ports: ${error.message}`, "error");
+  }
+}
+
+async function loadWifiNetworks() {
+  try {
+    const response = await fetch("/api/firmware/wifi-networks");
+    const data = await response.json();
+    wifiSsidOptions.innerHTML = "";
+    for (const ssid of data.ssids || []) {
+      const option = document.createElement("option");
+      option.value = ssid;
+      wifiSsidOptions.appendChild(option);
+    }
+  } catch (error) {
+    debugLog("failed to load Wi-Fi networks", error);
+  }
+}
+
+async function loadWifiConfig() {
+  try {
+    const response = await fetch("/api/firmware/wifi-config");
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      showStatus(`Failed to load Wi-Fi settings: ${response.status}`, "error");
+      return;
+    }
+    wifiSsidInput.value = data.ssid || "";
+    wifiPasswordInput.value = data.password || "";
+    wifiPasswordInput.placeholder = "Enter Wi-Fi password";
+    serverUploadUrlInput.value = data.server_upload_url || "";
+    deviceIdInput.value = data.device_id || "";
+  } catch (error) {
+    showStatus(`Failed to load Wi-Fi settings: ${error.message}`, "error");
+  }
+}
+
+async function saveWifiConfig() {
+  const requestBody = {
+    ssid: wifiSsidInput.value.trim(),
+    password: wifiPasswordInput.value,
+    server_upload_url: serverUploadUrlInput.value.trim(),
+    device_id: deviceIdInput.value.trim(),
+  };
+  if (!requestBody.ssid || !requestBody.server_upload_url || !requestBody.device_id) {
+    showStatus("SSID, Server URL, and Device ID are required", "error");
+    return false;
+  }
+  try {
+    const response = await fetch("/api/firmware/wifi-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      logBox.textContent = formatApiError(data);
+      showStatus(`Failed to save Wi-Fi settings: ${response.status}`, "error");
+      return false;
+    }
+    wifiPasswordInput.value = data.password || requestBody.password || "";
+    wifiPasswordInput.placeholder = "Enter Wi-Fi password";
+    logBox.textContent = [
+      "Wi-Fi settings saved.",
+      `SSID: ${data.ssid}`,
+      `Server URL: ${data.server_upload_url}`,
+      `Device ID: ${data.device_id}`,
+      `Password: ${data.password_set ? data.password || requestBody.password : "not set"}`,
+      "",
+      data.message,
+    ].join("\n");
+    showStatus("Wi-Fi settings saved", "success");
+    return true;
+  } catch (error) {
+    showStatus(`Failed to save Wi-Fi settings: ${error.message}`, "error");
+    logBox.textContent = String(error);
+    return false;
+  }
+}
+
+async function writeWifiFirmware() {
+  const port = devicePortSelect.value || serialPortSelect.value;
+  if (!port) {
+    showStatus("Select an ESP32-S3 COM port first", "error");
+    renderWifiFirmwareProgress("error", "Select an ESP32-S3 COM port first.");
+    return;
+  }
+  const confirmed = window.confirm(
+    `Save Wi-Fi settings and write capture firmware to ${port}?\n\nThis writes capture_upload firmware, not inference firmware.`
+  );
+  if (!confirmed) return;
+
+  const writeButton = document.querySelector("#writeWifiFirmwareButton");
+  writeButton.disabled = true;
+  renderWifiFirmwareProgress("saving", "Saving Wi-Fi settings before writing.");
+  const saved = await saveWifiConfig();
+  if (!saved) {
+    renderWifiFirmwareProgress("error", "Wi-Fi settings could not be saved.");
+    writeButton.disabled = false;
+    return;
+  }
+  showStatus(`Writing Wi-Fi capture firmware to ${port}...`, "info");
+  renderWifiFirmwareProgress("writing", `Writing unified firmware to ${port}. Keep the ESP32-S3 connected.`);
+  logBox.textContent = [
+    "Writing capture_upload firmware.",
+    "1. Save Wi-Fi settings",
+    "2. Build capture_upload if needed",
+    "3. Write bootloader, partition table, and capture_upload app",
+    "",
+    "Keep the ESP32-S3 connected.",
+  ].join("\n");
+  let verifyTimer = null;
+  try {
+    verifyTimer = setTimeout(() => {
+      renderWifiFirmwareProgress("verifying", "Write is taking a while. Waiting for reset and camera URL detection.");
+    }, 18000);
+    const response = await fetch("/api/firmware/flash-selected", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ port, target: "capture_full", force_build: true }),
+    });
+    clearTimeout(verifyTimer);
+    verifyTimer = null;
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      logBox.textContent = formatApiError(data);
+      showStatus(`Wi-Fi firmware write failed: ${response.status}`, "error");
+      renderWifiFirmwareProgress("error", `Write failed: HTTP ${response.status}`);
+      return;
+    }
+    renderWifiFirmwareProgress("verifying", "Firmware written. Checking camera URL after reset.");
+    const writtenFiles = (data.target?.files || [])
+      .map((item) => `${item.address} ${item.relative_file}`)
+      .join("\n");
+    logBox.textContent = [
+      "Wi-Fi firmware write completed.",
+      `port: ${data.port || port}`,
+      `target: ${data.target?.label || "Capture upload firmware full image"}`,
+      `build: ${data.force_build ? "rebuilt before flash" : "used existing build"}`,
+      data.camera?.found ? `camera: ${data.camera.url}` : "camera: IP not found in monitor output yet",
+      "",
+      "written files:",
+      writtenFiles || "-",
+      "",
+      "After reset, ESP32-S3 will connect to the saved Wi-Fi and upload images to the saved server URL.",
+    ].join("\n");
+    showStatus(`Wrote Wi-Fi capture firmware to ${port}`, "success");
+    renderWifiFirmwareProgress(
+      "done",
+      data.camera?.found ? `Write completed. Camera found: ${data.camera.url}` : "Write completed. Camera IP is still being detected."
+    );
+    await loadInferenceArtifacts();
+    if (data.camera?.found && data.camera.url) {
+      esp32BaseUrlInput.value = data.camera.url;
+      localStorage.setItem("esp32BaseUrl", data.camera.url);
+      openRemoteCamera(data.camera.url);
+    } else {
+      setTimeout(() => discoverRemoteCamera({ openAfterFound: true }), 3500);
+    }
+  } catch (error) {
+    showStatus(`Wi-Fi firmware write failed: ${error.message}`, "error");
+    logBox.textContent = String(error);
+    renderWifiFirmwareProgress("error", `Write failed: ${error.message}`);
+  } finally {
+    if (verifyTimer) {
+      clearTimeout(verifyTimer);
+    }
+    writeButton.disabled = false;
+  }
+}
+
+function normalizedEsp32BaseUrl() {
+  let value = esp32BaseUrlInput.value.trim();
+  if (value.includes("[object PointerEvent]")) {
+    esp32BaseUrlInput.value = "";
+    value = "";
+  }
+  if (!value) {
+    showStatus("Enter the ESP32-S3 URL first", "error");
+    return "";
+  }
+  if (!/^https?:\/\//i.test(value)) {
+    value = `http://${value}`;
+  }
+  return value.replace(/\/+$/, "");
+}
+
+async function discoverRemoteCamera(options = {}) {
+  if (esp32BaseUrlInput.value.includes("[object PointerEvent]")) {
+    esp32BaseUrlInput.value = "";
+    localStorage.removeItem("esp32BaseUrl");
+  }
+  const { openAfterFound = false } = options;
+  showStatus("Searching for ESP32-S3 camera URL...", "info");
+  if (remoteCameraDialog.open) remoteCameraStatus.textContent = "Searching for camera...";
+  const previousDisabled = discoverCameraButton.disabled;
+  discoverCameraButton.disabled = true;
+  try {
+    const port = devicePortSelect.value || serialPortSelect.value;
+    const cameraUrlEndpoint = port
+      ? `/api/firmware/camera-url?port=${encodeURIComponent(port)}`
+      : "/api/firmware/camera-url";
+    const response = await fetch(cameraUrlEndpoint);
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      logBox.textContent = formatApiError(data);
+      showStatus(`Camera discovery failed: ${response.status}`, "error");
+      return "";
+    }
+    if (!data.found || !data.camera?.url) {
+      const networks = (data.discovery?.networks || []).join(", ");
+      const monitorSummary = (data.monitor_results || [])
+        .map((item) => `${item.port}: ${item.result?.found ? item.result.url : "not found"}`)
+        .join("\n");
+      logBox.textContent = [
+        data.message || "ESP32-S3 camera was not found.",
+        `tried ports: ${(data.tried_ports || []).join(", ") || "-"}`,
+        `scanned: ${networks || "-"}`,
+        `checked hosts: ${data.discovery?.checked ?? 0}`,
+        "",
+        monitorSummary,
+        "",
+        "Make sure capture_upload is running and the ESP32-S3 is on the same Wi-Fi as this PC.",
+      ].join("\n");
+      showStatus("ESP32-S3 camera not found", "error");
+      return "";
+    }
+    const baseUrl = data.camera.url;
+    esp32BaseUrlInput.value = baseUrl;
+    localStorage.setItem("esp32BaseUrl", baseUrl);
+    logBox.textContent = [
+      "ESP32-S3 camera URL found.",
+      `URL: ${baseUrl}`,
+      `source: ${data.source || "-"}`,
+      `COM: ${data.port || "-"}`,
+      `response: ${data.camera.response || "-"}`,
+    ].join("\n");
+    showStatus(`Found ESP32-S3 camera at ${baseUrl}`, "success");
+    if (openAfterFound) openRemoteCamera(baseUrl);
+    return baseUrl;
+  } catch (error) {
+    showStatus(`Camera discovery failed: ${error.message}`, "error");
+    logBox.textContent = String(error);
+    return "";
+  } finally {
+    discoverCameraButton.disabled = previousDisabled;
+  }
+}
+
+function stopAiCameraLoop() {
+  aiCameraRunning = false;
+  if (aiCameraTimer) {
+    clearTimeout(aiCameraTimer);
+    aiCameraTimer = null;
+  }
+}
+
+function updateInferenceDisplay(data, { overlay = false } = {}) {
+  const scoreLines = Array.isArray(data.scores)
+    ? data.scores.map((item) => `${item.label}: ${(Number(item.score) * 100).toFixed(1)}%`)
+    : [];
+  remoteCameraStatus.textContent = `Inference: ${data.label}`;
+  if (overlay && remoteLabelOverlay) {
+    const bestScore = Array.isArray(data.scores)
+      ? data.scores.find((item) => item.label === data.label)?.score
+      : null;
+    const suffix = Number.isFinite(Number(bestScore)) ? ` ${(Number(bestScore) * 100).toFixed(1)}%` : "";
+    remoteLabelOverlay.textContent = `${data.label}${suffix}`;
+    remoteLabelOverlay.classList.add("active");
+  }
+}
+
+async function requestRemoteInference(baseUrl, { pauseStream = true, overlay = false } = {}) {
+  const streamUrl = `${baseUrl}/stream?t=${Date.now()}`;
+  if (pauseStream) {
+    remoteCameraStream.removeAttribute("src");
+  }
+  try {
+    const response = await fetch(`${baseUrl}/infer?t=${Date.now()}`, { method: "GET", cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data?.error || data?.detail?.message || `HTTP ${response.status}`);
+    }
+    updateInferenceDisplay(data, { overlay });
+    return data;
+  } finally {
+    if (pauseStream && remoteCameraDialog.open) {
+      remoteCameraStream.src = streamUrl;
+    }
+  }
+}
+
+function scheduleAiCameraInference(baseUrl) {
+  stopAiCameraLoop();
+  aiCameraRunning = true;
+  const run = async () => {
+    if (!aiCameraRunning || !remoteCameraDialog.open) return;
+    try {
+      remoteLabelOverlay.textContent = "Infer...";
+      await requestRemoteInference(baseUrl, { pauseStream: false, overlay: true });
+    } catch (error) {
+      remoteCameraStatus.textContent = `AI label failed: ${error.message}`;
+      remoteLabelOverlay.textContent = "No inference";
+      remoteLabelOverlay.classList.remove("active");
+    } finally {
+      if (aiCameraRunning && remoteCameraDialog.open) {
+        aiCameraTimer = setTimeout(run, 2500);
+      }
+    }
+  };
+  run();
+}
+
+async function openRemoteCamera(baseUrlOverride = "", options = {}) {
+  if (typeof baseUrlOverride !== "string") {
+    baseUrlOverride = "";
+  }
+  let baseUrl = baseUrlOverride;
+  if (!baseUrl && !esp32BaseUrlInput.value.trim()) {
+    baseUrl = await discoverRemoteCamera({ openAfterFound: false });
+  } else if (!baseUrl) {
+    baseUrl = normalizedEsp32BaseUrl();
+  }
+  if (!baseUrl) return;
+  localStorage.setItem("esp32BaseUrl", baseUrl);
+  esp32BaseUrlInput.value = baseUrl;
+  const aiMode = Boolean(options.aiMode);
+  stopAiCameraLoop();
+  remoteCameraStatus.textContent = aiMode ? "Opening AI camera..." : "Opening stream...";
+  remoteLabelOverlay.textContent = aiMode ? "Infer..." : "";
+  remoteLabelOverlay.classList.toggle("visible", aiMode);
+  remoteLabelOverlay.classList.remove("active");
+  remoteCameraStream.src = `${baseUrl}/stream?t=${Date.now()}`;
+  remoteCameraDialog.showModal();
+  if (aiMode) {
+    scheduleAiCameraInference(baseUrl);
+  }
+}
+
+function closeRemoteCamera() {
+  stopAiCameraLoop();
+  remoteCameraStream.removeAttribute("src");
+  remoteCameraStatus.textContent = "Idle";
+  remoteLabelOverlay.textContent = "";
+  remoteLabelOverlay.classList.remove("visible", "active");
+  remoteCameraDialog.close();
+}
+
+function triggerShutterFlash() {
+  remoteShutterFlash.classList.remove("flash");
+  void remoteShutterFlash.offsetWidth;
+  remoteShutterFlash.classList.add("flash");
+}
+
+async function remoteCapture() {
+  const baseUrl = normalizedEsp32BaseUrl();
+  if (!baseUrl) return;
+  const streamUrl = `${baseUrl}/stream?t=${Date.now()}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  remoteCaptureButton.disabled = true;
+  remoteCameraStatus.textContent = "Capturing...";
+  logBox.textContent = [
+    "Remote capture requested.",
+    `URL: ${baseUrl}/capture`,
+    "Pausing stream while the ESP32-S3 captures and uploads.",
+  ].join("\n");
+  remoteCameraStream.removeAttribute("src");
+  try {
+    const response = await fetch("/api/firmware/remote-capture", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_url: baseUrl }),
+      signal: controller.signal,
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      remoteCameraStatus.textContent = `Capture failed: ${response.status}`;
+      logBox.textContent = formatApiError(data);
+      return;
+    }
+    triggerShutterFlash();
+    remoteCameraStatus.textContent = "Captured and uploaded. Refreshing images...";
+    logBox.textContent = [
+      "Remote capture completed.",
+      `URL: ${data.url}`,
+      `status: ${data.status}`,
+      "",
+      data.body || "",
+    ].join("\n");
+    setTimeout(loadImages, 1200);
+  } catch (error) {
+    const message = error.name === "AbortError" ? "request timed out" : error.message;
+    remoteCameraStatus.textContent = `Capture failed: ${message}`;
+    logBox.textContent = [
+      "Remote capture failed.",
+      "Check that capture_upload firmware is running, ESP32-S3 URL is correct, and the PC can reach the ESP32-S3 port.",
+      "",
+      String(error),
+    ].join("\n");
+  } finally {
+    clearTimeout(timeoutId);
+    remoteCaptureButton.disabled = false;
+    if (remoteCameraDialog.open) {
+      remoteCameraStream.src = streamUrl;
+    }
+  }
+}
+
+async function flashAiModelOnly() {
+  const runId = selectedModelRunId();
+  const port = serialPortSelect.value;
+  if (!runId) return;
+  if (!port) {
+    showStatus("Select a COM port first", "error");
+    return;
+  }
+  const confirmed = window.confirm(
+    `Write only ai_model partition to ESP32-S3 on ${port}?\n\nrun_id: ${runId}\noffset: 0x310000\napp firmware will not be rewritten.`
+  );
+  if (!confirmed) return;
+  showStatus(`Writing ai_model partition to ${port}...`, "info");
+  renderFlashSteps("flashing");
+  logBox.textContent = [
+    "Model-only write started.",
+    "The app firmware is not rewritten.",
+    "Keep the ESP32-S3 connected.",
+  ].join("\n");
+  try {
+    const response = await fetch(`/api/training/${encodeURIComponent(runId)}/flash-ai-model`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ port }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      logBox.textContent = formatApiError(data);
+      showStatus(`Model write failed: ${response.status}`, "error");
+      return;
+    }
+    logBox.textContent = [
+      "Model-only write completed.",
+      `run_id: ${data.run_id}`,
+      `port: ${data.port || port}`,
+      `partition: ${data.partition}`,
+      `offset: ${data.offset}`,
+      `ai_model.bin: ${data.ai_model_size} bytes`,
+      "",
+      data.message || "AI model partition write completed.",
+    ].join("\n");
+    renderFlashSteps("done");
+    showStatus(`Wrote ai_model partition to ${port}`, "success");
+    await loadModels();
+    modelSelect.value = runId;
+  } catch (error) {
+    showStatus(`Model write failed: ${error.message}`, "error");
+    logBox.textContent = String(error);
   }
 }
 
@@ -914,6 +1680,35 @@ document.querySelector("#downloadCsvButton").addEventListener("click", downloadM
 document.querySelector("#exportDatasetButton").addEventListener("click", exportDataset);
 document.querySelector("#startTrainingButton").addEventListener("click", startTraining);
 document.querySelector("#testModelButton").addEventListener("click", testReservedImages);
+document.querySelector("#prepareInferenceButton").addEventListener("click", prepareInferenceFirmware);
+document.querySelector("#refreshPortsButton").addEventListener("click", loadSerialPorts);
+document.querySelector("#flashAiModelButton").addEventListener("click", flashAiModelOnly);
+document.querySelector("#saveWifiConfigButton").addEventListener("click", saveWifiConfig);
+document.querySelector("#refreshDevicePortsButton").addEventListener("click", loadSerialPorts);
+document.querySelector("#writeWifiFirmwareButton").addEventListener("click", writeWifiFirmware);
+toggleWifiPasswordButton.addEventListener("click", () => {
+  const isHidden = wifiPasswordInput.type === "password";
+  wifiPasswordInput.type = isHidden ? "text" : "password";
+  toggleWifiPasswordButton.textContent = isHidden ? "Hide password" : "Show password";
+});
+discoverCameraButton.addEventListener("click", () => discoverRemoteCamera({ openAfterFound: false }));
+document.querySelector("#openRemoteCameraButton").addEventListener("click", () => openRemoteCamera());
+openAiCameraButton.addEventListener("click", () => openRemoteCamera("", { aiMode: true }));
+document.querySelector("#closeRemoteCameraButton").addEventListener("click", closeRemoteCamera);
+remoteCaptureButton.addEventListener("click", remoteCapture);
+remoteCameraDialog.addEventListener("close", () => {
+  stopAiCameraLoop();
+  remoteCameraStream.removeAttribute("src");
+  remoteCameraStatus.textContent = "Idle";
+  remoteLabelOverlay.textContent = "";
+  remoteLabelOverlay.classList.remove("visible", "active");
+});
+devicePortSelect.addEventListener("change", () => {
+  serialPortSelect.value = devicePortSelect.value;
+});
+serialPortSelect.addEventListener("change", () => {
+  devicePortSelect.value = serialPortSelect.value;
+});
 datasetSelect.addEventListener("change", () => {
   if (datasetSelect.value) {
     document.querySelector("#datasetPath").value = datasetSelect.value;
@@ -949,4 +1744,17 @@ document.addEventListener("keydown", (event) => {
 loadLabels().then(loadImages);
 loadDatasets();
 loadModels();
+loadSerialPorts();
+loadWifiConfig();
+loadWifiNetworks();
+{
+  const savedEsp32BaseUrl = localStorage.getItem("esp32BaseUrl") || "";
+  if (savedEsp32BaseUrl.includes("[object PointerEvent]")) {
+    localStorage.removeItem("esp32BaseUrl");
+    esp32BaseUrlInput.value = "";
+  } else {
+    esp32BaseUrlInput.value = savedEsp32BaseUrl;
+  }
+}
+renderFlashSteps("idle");
 renderTrainingCharts([]);

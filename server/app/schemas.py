@@ -39,3 +39,29 @@ class TrainingStartRequest(BaseModel):
     epochs: int = 30
     batch_size: int = 16
     model_type: str = "tiny_cnn"
+
+
+class ModelExportRequest(BaseModel):
+    dataset_path: str | None = None
+
+
+class FirmwareBuildRequest(BaseModel):
+    clean: bool = False
+
+
+class FirmwareFlashRequest(BaseModel):
+    port: str = Field(min_length=3, max_length=32)
+    firmware: str = "inference_classification"
+    target: str | None = None
+    force_build: bool = False
+
+
+class WifiConfigUpdate(BaseModel):
+    ssid: str = Field(min_length=1, max_length=128)
+    password: str | None = Field(default=None, max_length=128)
+    server_upload_url: str = Field(min_length=1, max_length=256)
+    device_id: str = Field(min_length=1, max_length=128)
+
+
+class RemoteCameraRequest(BaseModel):
+    base_url: str = Field(min_length=1, max_length=256)

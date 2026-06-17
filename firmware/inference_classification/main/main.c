@@ -9,7 +9,6 @@
 esp_err_t camera_init(void);
 
 static const char *TAG = "inference";
-static const char *LABELS[CLASS_COUNT] = {"target", "other"};
 
 void app_main(void)
 {
@@ -25,15 +24,22 @@ void app_main(void)
             vTaskDelay(pdMS_TO_TICKS(2000));
             continue;
         }
+        ESP_LOGI(TAG, "captured JPEG: %u bytes", fb->len);
 
         classification_result_t result = {0};
-        if (preprocess_jpeg_to_int8(fb->buf, fb->len, input, sizeof(input)) == ESP_OK &&
+        if (preprocess_jpeg_to_int8(
+                fb->buf,
+                fb->len,
+                input,
+                sizeof(input),
+                classifier_input_scale(),
+                classifier_input_zero_point()) == ESP_OK &&
             classifier_run(input, &result) == ESP_OK) {
             ESP_LOGI(TAG, "prediction:");
-            for (int i = 0; i < CLASS_COUNT; ++i) {
-                ESP_LOGI(TAG, "  %s: %.2f", LABELS[i], result.scores[i]);
+            for (int i = 0; i < result.score_count; ++i) {
+                ESP_LOGI(TAG, "  %s: %.2f", classifier_label(i), result.scores[i]);
             }
-            ESP_LOGI(TAG, "result: %s", LABELS[result.best_index]);
+            ESP_LOGI(TAG, "result: %s", classifier_label(result.best_index));
         }
         esp_camera_fb_return(fb);
         vTaskDelay(pdMS_TO_TICKS(3000));
