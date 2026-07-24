@@ -132,7 +132,7 @@ trainer/     学習とTFLite変換
 tools/       モデル変換補助
 firmware/    ESP32-S3用ファーム
 ```
-以下をREADMEの追記、またはGitHub Issue本文にそのまま貼り付けできます。
+# 追記
 ## 実行環境の確認結果と初回セットアップ時の注意
 
 ### 確認済み環境
