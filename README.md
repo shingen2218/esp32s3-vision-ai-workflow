@@ -166,37 +166,63 @@ idf.py -p COM3 monitor
 初回ファームウェアビルド時の注意
 GitHubからダウンロードした直後の状態では、以下のフォルダーが存在しません。
 
-  firmware/capture_upload/managed_components
-  firmware/inference_classification/managed_components
-  inference_classificationでは、以下のESP-IDFコンポーネントが必要です。
-  espressif/esp32-camera
-  esp-tflite-micro
-  esp_jpeg
-  esp-nn
+- firmware/capture_upload/managed_components
+- firmware/inference_classification/managed_components
+- inference_classificationでは、以下のESP-IDFコンポーネントが必要です。
+- espressif/esp32-camera
+- esp-tflite-micro
+- esp_jpeg
+- esp-nn
+- 
 初回ビルド時には、ESP-IDF Component Managerによるコンポーネント取得と、インターネット接続が必要です。
+
 現在確認されている構成上の問題
+
 firmware/capture_upload/CMakeLists.txt は、以下のmanaged componentsを直接参照しています。
-managed_components/espressif__esp_jpeg
-../inference_classification/managed_components/espressif__esp32-camera
-../inference_classification/managed_components/espressif__esp-tflite-micro
-../inference_classification/managed_components/espressif__esp-nn
+
+- managed_components/espressif__esp_jpeg
+- ../inference_classification/managed_components/espressif__esp32-camera
+- ../inference_classification/managed_components/espressif__esp-tflite-micro
+- ../inference_classification/managed_components/espressif__esp-nn
+
 しかし、capture_upload/main/idf_component.ymlには依存部品が定義されていません。
+
 そのため、GitHubから展開した直後にcapture_uploadを直接ビルドすると、managed componentsが存在せずビルドに失敗する可能性があります。
+
 READMEには、以下の手順を追加する必要があります。
+
 inference_classification側のESP-IDFコンポーネントを取得する
+
 capture_uploadが参照するmanaged componentsを準備する
+
 その後にcapture_uploadをビルドする
+
 動作確認結果
+
 確認した範囲では、以下は動作しました。
+
 FastAPIサーバの起動
+
 Web UIとAPIへのアクセス
+
 画像アップロード
+
 ラベル付け
+
 データセット作成
+
 TensorFlowモデル学習
+
 TFLite変換
+
 ESP32-S3用モデルファイル生成
+
 ESP-IDFコンポーネント取得後のファームウェアビルド
+
 まとめ
+
 Pythonパッケージの追加インストールは不要です。
-一方、ファームウェアの初回ビルドにはESP-IDFのmanaged components取得が必要です。また、capture_uploadの依存部品定義とCMakeLists.txtのパス構成について、READMEへの説明追加またはプロジェクト構成の修正が必要です。
+
+一方、ファームウェアの初回ビルドにはESP-IDFのmanaged components取得が必要です。また、capture_uploadの依存部品定義とCMakeLists.txtのパス構成について、READMEへの説明追加または
+
+プロジェクト構成の修正が必要です。
